@@ -19,6 +19,7 @@ button:hover { background: #1e40af; }
 .msg a { color: #1e40af; text-decoration: underline; font-weight: 500;}
 #qr { margin: 15px auto; border: 4px solid #fff; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);}
 .status { color: #10b981; font-weight: 500; margin-top: 10px; }
+.text-xs { font-size: 0.75rem; }
 </style>
 </head>
 <body>
@@ -29,6 +30,7 @@ button:hover { background: #1e40af; }
 <div id="app-content" style="display:none;">
     <p id="room-id" class="text-lg font-medium text-gray-700 mb-3">รหัสห้องของคุณ: -</p>
     <canvas id="qr" class="w-40 h-40"></canvas>
+    <p id="user-id-display" class="text-xs text-gray-500 mt-1 mb-3">User ID: N/A</p>
     
     <input id="join-room" placeholder="ป้อนรหัสห้องที่ต้องการเข้าร่วม (8 หลัก)" class="mb-2">
     <button id="join-btn" class="bg-purple-600 hover:bg-purple-700">เข้าร่วมห้อง</button>
@@ -40,7 +42,7 @@ button:hover { background: #1e40af; }
         <input id="message" placeholder="พิมพ์ข้อความที่นี่..." class="mt-4">
         <button id="send" class="bg-green-600 hover:bg-green-700">ส่งข้อความ</button>
         <label for="fileInput" class="block w-full text-center py-2 px-4 rounded-lg bg-yellow-500 text-white cursor-pointer hover:bg-yellow-600 mt-2">
-            เลือกไฟล์เพื่อส่ง
+            เลือกไฟล์เพื่อส่ง (สูงสุด 20MB)
         </label>
         <input type="file" id="fileInput" class="hidden">
     </div>
@@ -62,9 +64,10 @@ import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.j
 // ⚠️ ต้องแทนที่ Firebase Config ด้วยค่าจริงของคุณ
 // ----------------------------------------------------------------------
 const firebaseConfig = {
+    // ต้องแทนที่ค่าเหล่านี้ด้วย Firebase Config ของคุณ
     apiKey: "YOUR_API_KEY",
     authDomain: "YOUR_AUTH_DOMAIN",
-    databaseURL: "YOUR_DATABASE_URL", // เช่น https://your-project-default-rtdb.asia-southeast1.firebasedatabase.app
+    databaseURL: "YOUR_DATABASE_URL", 
     projectId: "YOUR_PROJECT_ID",
     storageBucket: "YOUR_STORAGE_BUCKET",
     messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
@@ -72,10 +75,17 @@ const firebaseConfig = {
 };
 
 // 🔸 การเริ่มต้น Firebase
+let db, auth;
 if (!firebaseConfig.apiKey.includes("YOUR_")) {
-    const app = initializeApp(firebaseConfig);
-    var db = getDatabase(app);
-    var auth = getAuth(app);
+    try {
+        const app = initializeApp(firebaseConfig);
+        db = getDatabase(app);
+        auth = getAuth(app);
+    } catch(e) {
+        document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: Firebase Config ไม่ถูกต้องหรือเริ่มต้นล้มเหลว';
+        console.error("Firebase Initialization Error:", e);
+        throw e;
+    }
 } else {
     document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: กรุณาใส่ Firebase Config ที่ถูกต้อง';
     throw new Error("Please update firebaseConfig with your actual credentials.");
@@ -84,6 +94,7 @@ if (!firebaseConfig.apiKey.includes("YOUR_")) {
 let userId = null;
 let peer = null;
 let currentRoomId = null;
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 // ----------------------------------------------------------------------
 // 🔑 ฟังก์ชันการรับรองความถูกต้อง (Anonymous Authentication)
@@ -94,7 +105,8 @@ async function authenticate() {
         const userCredential = await signInAnonymously(auth);
         userId = userCredential.user.uid;
         
-        document.getElementById('auth-status').textContent = `✅ เข้าสู่ระบบสำเร็จ (User ID: ${userId.substring(0, 8)}...)`;
+        document.getElementById('auth-status').textContent = `✅ เข้าสู่ระบบสำเร็จ`;
+        document.getElementById('user-id-display').textContent = `User ID: ${userId.substring(0, 8)}...`;
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-green-600');
         document.getElementById('app-content').style.display = 'block';
         setupRoom(); // เริ่มตั้งค่าห้องหลังจากยืนยันตัวตนแล้ว
@@ -109,7 +121,6 @@ async function authenticate() {
 // ⚙️ ฟังก์ชันหลักในการสร้างห้องและเชื่อมต่อ Peer
 // ----------------------------------------------------------------------
 function setupRoom() {
-    // 1. ตรวจสอบพารามิเตอร์ URL เพื่อเข้าร่วมห้อง
     const params = new URLSearchParams(location.search);
     const joinRoomId = params.get("room");
     
@@ -119,13 +130,14 @@ function setupRoom() {
         startNewRoom();
     }
 
-    // 2. ตั้งค่าปุ่ม 'เข้าร่วมห้อง'
     document.getElementById("join-btn").onclick = () => {
         const r = document.getElementById("join-room").value.trim();
-        if(r) joinRoomFunc(r);
+        if(r) {
+            // เพื่อให้ URL เปลี่ยนเมื่อ Join
+            window.location.href = window.location.origin + window.location.pathname + `?room=${r}`;
+        }
     };
 
-    // 3. ตั้งค่าการส่งข้อความและไฟล์
     document.getElementById("send").onclick = handleSendText;
     document.getElementById("fileInput").onchange = handleSendFile;
 }
@@ -138,7 +150,7 @@ function startNewRoom() {
     initializePeer(currentRoomId, true);
     
     document.getElementById("room-id").textContent = "รหัสห้องของคุณ: " + currentRoomId;
-    QRCode.toCanvas(document.getElementById("qr"), location.origin + "?room=" + currentRoomId, { width: 160 });
+    QRCode.toCanvas(document.getElementById("qr"), location.origin + location.pathname + "?room=" + currentRoomId, { width: 160 });
 }
 
 // ----------------------------------------------------------------------
@@ -148,23 +160,23 @@ function joinRoomFunc(rid) {
     currentRoomId = rid;
     document.getElementById("room-id").textContent = "กำลังเข้าร่วมห้อง: " + rid;
     document.getElementById("join-room").value = rid;
-    document.getElementById("join-btn").disabled = true;
+    
+    // ซ่อนปุ่ม Join เมื่อมีการเข้าร่วมแล้ว
+    document.getElementById("join-btn").style.display = 'none';
 
     initializePeer(rid, false);
     
-    QRCode.toCanvas(document.getElementById("qr"), location.origin + "?room=" + rid, { width: 160 });
+    QRCode.toCanvas(document.getElementById("qr"), location.origin + location.pathname + "?room=" + rid, { width: 160 });
 }
 
 // ----------------------------------------------------------------------
 // 🌐 ฟังก์ชันรวมสำหรับการสร้าง Peer และ Signaling
 // ----------------------------------------------------------------------
 function initializePeer(roomId, isInitiator) {
-    // ทำลาย Peer เดิม ถ้ามี
     if (peer && !peer.destroyed) {
         peer.destroy();
     }
     
-    // Path สำหรับ Signaling ใน Realtime Database
     const connRef = ref(db, `webrtc_signals/${roomId}`);
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
@@ -172,20 +184,16 @@ function initializePeer(roomId, isInitiator) {
 
     // ส่ง Signal ไป Firebase
     peer.on('signal', data => {
-        // ใช้ push() เพื่อสร้าง node ใหม่ทุกครั้งที่มี signal
         push(connRef, JSON.stringify(data)).catch(e => console.error("Error pushing signal:", e));
     });
 
     // รับ Signal จาก Firebase
-    // ใช้ onChildAdded เพื่อรับ signal ที่ถูกส่งเข้ามาใหม่เท่านั้น
     onChildAdded(connRef, snap => {
         try {
             const data = JSON.parse(snap.val());
             if (!peer.destroyed && data) {
                 peer.signal(data);
             }
-            // สามารถลบ Signal ที่ประมวลผลแล้วได้เพื่อทำความสะอาด
-            // set(ref(db, `webrtc_signals/${roomId}/${snap.key}`), null);
         } catch (e) {
             console.error("Error signaling peer:", e);
         }
@@ -196,8 +204,6 @@ function initializePeer(roomId, isInitiator) {
         document.getElementById("chat-box").style.display = "block";
         document.getElementById('connection-status').textContent = '🟢 เชื่อมต่อ Peer-to-Peer สำเร็จ! (เข้ารหัส)';
         addMsg("✅ เชื่อมต่อกับคู่สนทนาสำเร็จ! เริ่มแชทและส่งไฟล์ได้เลย");
-        // Clear old signals after successful connection (optional, for cleanliness)
-        // set(connRef, null); 
     });
 
     peer.on("data", handleReceiveData);
@@ -215,28 +221,32 @@ function initializePeer(roomId, isInitiator) {
 }
 
 // ----------------------------------------------------------------------
-// 📤 การจัดการการส่งข้อมูล
+// 📤 การจัดการการส่งข้อมูล (ข้อความ)
 // ----------------------------------------------------------------------
 function handleSendText() {
     const text = document.getElementById("message").value.trim();
     if (!text || !peer || peer.destroyed || !peer.connected) return;
     
     try {
-        // ใช้ userId สั้นๆ เป็นตัวบ่งชี้ผู้ส่ง
         peer.send(JSON.stringify({ type: "text", text, sender: userId.substring(0, 8) }));
         addMsg(`🧍‍♂️ (คุณ): ${text}`);
         document.getElementById("message").value = "";
     } catch (e) {
         console.error("Error sending text:", e);
+        addMsg("❌ การส่งข้อความล้มเหลว");
     }
 }
 
+// ----------------------------------------------------------------------
+// 📤 การจัดการการส่งข้อมูล (ไฟล์)
+// ----------------------------------------------------------------------
 function handleSendFile(e) {
     const file = e.target.files[0];
-    if (!file || !peer || peer.destroyed || !peer.connected) return;
+    if (!file || !peer || peer.destroyed || !peer.connected) {
+        e.target.value = null; 
+        return;
+    }
 
-    // WebRTC มีข้อจำกัดในการส่งไฟล์ขนาดใหญ่ โดยทั่วไปไม่ควรเกิน 20-30MB
-    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
     if (file.size > MAX_FILE_SIZE) {
         addMsg(`❌ ไม่สามารถส่งไฟล์ได้: ไฟล์มีขนาดใหญ่เกิน ${(MAX_FILE_SIZE / 1024 / 1024).toFixed(0)}MB`);
         e.target.value = null; // Reset input
@@ -251,7 +261,7 @@ function handleSendFile(e) {
             addMsg(`📤 ส่งไฟล์: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         } catch (e) {
             console.error("Error sending file data:", e);
-            addMsg("❌ การส่งไฟล์ล้มเหลว");
+            addMsg("❌ การส่งไฟล์ล้มเหลว (ขนาดไฟล์อาจใหญ่เกินไป)");
         }
         e.target.value = null; // Reset input after use
     };
