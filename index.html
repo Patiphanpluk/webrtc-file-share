@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File Share by Plug</title>
+  <script src="https://cdn.webrtc.ecl.ntt.com/skyway-latest.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: "Prompt", sans-serif;
+      background: linear-gradient(135deg, #e8f0ff, #fefefe);
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+    }
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+      padding: 30px;
+      width: 95%;
+      max-width: 420px;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #1e40af;
+    }
+    #qr {
+      margin: 20px auto;
+    }
+    input, button {
+      border: none;
+      padding: 10px 15px;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+    input {
+      width: 70%;
+      background: #f1f5f9;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    #messages {
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+      margin-top: 15px;
+      text-align: left;
+    }
+    .msg {
+      background: #e0f2fe;
+      padding: 8px 10px;
+      margin: 4px 0;
+      border-radius: 8px;
+    }
+    #fileInput {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>📡 File Share</h1>
+    <p id="peer-id">กำลังสร้างห้อง...</p>
+    <canvas id="qr"></canvas>
+
+    <div id="connect-box">
+      <input id="remote-id" placeholder="รหัสห้องที่ต้องการเข้าร่วม">
+      <button id="connect-btn">เชื่อมต่อ</button>
+    </div>
+
+    <div id="chat-box" style="display:none;">
+      <div id="messages"></div>
+      <input id="message" placeholder="พิมพ์ข้อความ...">
+      <button id="send">ส่ง</button><br>
+      <input type="file" id="fileInput">
+    </div>
+  </div>
+
+  <script>
+    // 🧩 ใส่ API KEY ใหม่ของคุณตรงนี้ !!!
+    const SKYWAY_KEY = "YOUR_NEW_API_KEY_HERE";
+
+    const peer = new Peer({ key: SKYWAY_KEY });
+    const qrCanvas = document.getElementById("qr");
+    const peerIdEl = document.getElementById("peer-id");
+    const connectBox = document.getElementById("connect-box");
+    const chatBox = document.getElementById("chat-box");
+    const messages = document.getElementById("messages");
+
+    let conn;
+
+    peer.on("open", id => {
+      peerIdEl.textContent = "รหัสห้อง: " + id;
+      const url = `${location.origin}${location.pathname}?room=${id}`;
+      QRCode.toCanvas(qrCanvas, url, { width: 200 });
+      console.log("My Peer ID:", id);
+    });
+
+    peer.on("connection", c => {
+      conn = c;
+      setupConnection();
+    });
+
+    document.getElementById("connect-btn").onclick = () => {
+      const remoteId = document.getElementById("remote-id").value.trim();
+      if (!remoteId) return alert("กรอกรหัสห้องก่อน!");
+      conn = peer.connect(remoteId);
+      setupConnection();
+    };
+
+    function setupConnection() {
+      conn.on("open", () => {
+        connectBox.style.display = "none";
+        chatBox.style.display = "block";
+        addMsg("✅ เชื่อมต่อสำเร็จ!");
+      });
+
+      conn.on("data", data => {
+        if (data.type === "file") {
+          const a = document.createElement("a");
+          a.href = data.url;
+          a.download = data.name;
+          a.textContent = `📁 รับไฟล์: ${data.name}`;
+          a.target = "_blank";
+          const div = document.createElement("div");
+          div.className = "msg";
+          div.appendChild(a);
+          messages.appendChild(div);
+        } else {
+          addMsg("👤: " + data.text);
+        }
+      });
+    }
+
+    document.getElementById("send").onclick = () => {
+      const text = document.getElementById("message").value.trim();
+      if (!text || !conn) return;
+      conn.send({ text });
+      addMsg("🧍‍♂️: " + text);
+      document.getElementById("message").value = "";
+    };
+
+    document.getElementById("fileInput").onchange = async e => {
+      const file = e.target.files[0];
+      if (!file || !conn) return;
+      const url = URL.createObjectURL(file);
+      conn.send({ type: "file", name: file.name, url });
+      addMsg("📤 ส่งไฟล์: " + file.name);
+    };
+
+    function addMsg(txt) {
+      const div = document.createElement("div");
+      div.className = "msg";
+      div.textContent = txt;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    // ตรวจสอบว่ามีพารามิเตอร์ ?room=xxx ไหม → ถ้ามีให้ auto join
+    const params = new URLSearchParams(location.search);
+    const room = params.get("room");
+    if (room) {
+      document.getElementById("remote-id").value = room;
+      document.getElementById("connect-btn").click();
+    }
+  </script>
+</body>
+</html>
