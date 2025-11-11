@@ -3,14 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>File Share Firebase Modular SDK</title>
+<title>File Share Firebase</title>
+<style>
+body { font-family:sans-serif; background:#f0f4f8; display:flex; justify-content:center; align-items:center; height:100vh;}
+.card { background:#fff; padding:30px; border-radius:15px; box-shadow:0 10px 20px rgba(0,0,0,0.1); width:90%; max-width:400px; text-align:center;}
+input, button { padding:10px 15px; border-radius:10px; margin:5px 0; font-size:16px;}
+button { background:#2563eb; color:white; cursor:pointer;}
+#messages { height:150px; overflow-y:auto; background:#f8fafc; padding:10px; border-radius:10px; text-align:left; margin-top:10px;}
+.msg { background:#e0f2fe; padding:6px 10px; margin:4px 0; border-radius:8px;}
+#qr { margin: 15px auto; }
+</style>
+</head>
+<body>
+<div class="card">
+<h2>📡 File Share</h2>
+<p id="room-id">กำลังสร้างห้อง...</p>
+<canvas id="qr"></canvas>
+<input id="join-room" placeholder="รหัสห้องที่ต้องการเข้าร่วม">
+<button id="join-btn">เข้าร่วมห้อง</button>
+
+<div id="chat-box" style="display:none;">
+<div id="messages"></div>
+<input id="message" placeholder="พิมพ์ข้อความ">
+<button id="send">ส่ง</button><br>
+<input type="file" id="fileInput">
+</div>
+</div>
+
+<!-- Modular Firebase + SimplePeer + QR -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 import SimplePeer from "https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js";
 import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js";
 
-// 🔹 Firebase config
+// Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSyDoUsDv0omYdaR-oJL7g9qk21IhRUsIOpM",
   authDomain: "file-share-8bccd.firebaseapp.com",
@@ -25,22 +52,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// 🔹 สร้างห้อง
+// สร้างห้อง
 const roomId = Math.random().toString(36).substring(2,10);
-document.body.innerHTML = `
-<h2>📡 File Share</h2>
-<p id="room-id">รหัสห้อง: ${roomId}</p>
-<canvas id="qr"></canvas>
-<div id="chat-box" style="display:none;">
-  <div id="messages" style="height:150px; overflow-y:auto; background:#f0f0f0; padding:10px;"></div>
-  <input id="message" placeholder="พิมพ์ข้อความ">
-  <button id="send">ส่ง</button><br>
-  <input type="file" id="fileInput">
-</div>
-`;
+document.getElementById("room-id").textContent = "รหัสห้อง: "+roomId;
 QRCode.toCanvas(document.getElementById("qr"), location.origin+"?room="+roomId,{width:200});
 
-// 🔹 Peer
+// Peer
 let peer = new SimplePeer({ initiator:true, trickle:false });
 const connRef = ref(db, 'rooms/' + roomId);
 
@@ -87,12 +104,37 @@ peer.on("data", data => {
 function addMsg(txt){
   const div = document.createElement("div");
   div.textContent = txt;
+  div.className="msg";
   document.getElementById("messages").appendChild(div);
   const m = document.getElementById("messages");
   m.scrollTop = m.scrollHeight;
 }
+
+// เข้าห้องจาก QR / รหัส
+const params = new URLSearchParams(location.search);
+const joinRoom = params.get("room");
+if(joinRoom){
+  peer = new SimplePeer({ initiator:false, trickle:false });
+  const joinRef = ref(db, 'rooms/' + joinRoom);
+  peer.on('signal', data => push(joinRef, JSON.stringify(data)));
+  onChildAdded(joinRef, snap => peer.signal(JSON.parse(snap.val())));
+  peer.on('connect', () => { document.getElementById("chat-box").style.display="block"; addMsg("✅ เชื่อมต่อสำเร็จ!"); });
+  peer.on("data", data => {
+    const d = JSON.parse(data);
+    if(d.type=="text") addMsg("👤: "+d.text);
+    else if(d.type=="file"){
+      const a = document.createElement("a");
+      a.href=d.data;
+      a.download=d.name;
+      a.textContent="📁 รับไฟล์: "+d.name;
+      a.target="_blank";
+      const div = document.createElement("div");
+      div.className="msg";
+      div.appendChild(a);
+      document.getElementById("messages").appendChild(div);
+    }
+  });
+}
 </script>
-</head>
-<body>
 </body>
 </html>
