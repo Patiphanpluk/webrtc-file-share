@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>📡 WebRTC File Share & Chat</title>
-<!-- โหลด Tailwind CSS CDN สำหรับสไตล์ที่สวยงามและตอบสนองต่อทุกหน้าจอ -->
+<!-- Load Tailwind CSS CDN -->
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 /* Custom styles */
@@ -18,11 +18,11 @@ button:hover { background: #1e40af; }
 .msg { background: #e0f2fe; padding: 8px 12px; margin: 6px 0; border-radius: 6px; word-wrap: break-word; font-size: 14px;}
 .msg a { color: #1e40af; text-decoration: underline; font-weight: 500;}
 #qr { margin: 15px auto; border: 4px solid #fff; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);}
-.status { color: #10b981; font-weight: 500; margin-top: 10px; }
+.status { font-weight: 500; margin-top: 10px; }
 .text-xs { font-size: 0.75rem; }
 </style>
 
-<!-- โหลด SimplePeer เป็น Global Scripts เพื่อแก้ TypeError -->
+<!-- Load SimplePeer as a Global Script (Fixes SimplePeer is not a constructor) -->
 <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
 </head>
 <body>
@@ -38,7 +38,7 @@ button:hover { background: #1e40af; }
     <input id="join-room" placeholder="ป้อนรหัสห้องที่ต้องการเข้าร่วม (8 หลัก)" class="mb-2">
     <button id="join-btn" class="bg-purple-600 hover:bg-purple-700">เข้าร่วมห้อง</button>
 
-    <div id="connection-status" class="status"></div>
+    <div id="connection-status" class="status text-blue-600"></div>
 
     <div id="chat-box" style="display:none;">
         <div id="messages"></div>
@@ -54,7 +54,7 @@ button:hover { background: #1e40af; }
 
 <script type="module">
 // ----------------------------------------------------------------------
-// 🚨 Import Firebase Libraries (as modules)
+// 🚨 Import Firebase Libraries
 // ----------------------------------------------------------------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getDatabase, ref, push, onChildAdded, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
@@ -87,7 +87,7 @@ function toCanvas(canvasElement, text) {
                     ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
                 }
             }
-        }
+            }
     } catch(e) {
         console.error("QR Code generation error:", e);
         canvasElement.style.display = 'none';
@@ -102,6 +102,7 @@ function simpleQRCode(data) {
     const moduleCount = 21;
     return {
         isModuleDark: function(row, col) {
+            // Placeholder logic to draw a simple visual pattern
             if (row < 7 && col < 7) return true;
             if (row >= moduleCount - 7 && col < 7) return true;
             if (row < 7 && col >= moduleCount - 7) return true;
@@ -131,7 +132,7 @@ const firebaseConfig = {
 
 // 🔸 Initialize Firebase
 let db, auth;
-let currentRoomId = null; // เพิ่มตัวแปร global เพื่อเก็บ Room ID
+let currentRoomId = null; 
 try {
     const app = initializeApp(firebaseConfig);
     db = getDatabase(app);
@@ -165,6 +166,18 @@ async function authenticate() {
         const errorCode = error.code ? error.code.split('/')[1] : 'NETWORK_ERROR';
         document.getElementById('auth-status').textContent = `❌ ยืนยันตัวตนล้มเหลว: ${errorCode}`;
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-red-600');
+    }
+}
+
+// ----------------------------------------------------------------------
+// 🗑️ Function to clear the signaling data in Firebase
+// ----------------------------------------------------------------------
+function cleanupSignalingData(roomId) {
+    if (db && roomId) {
+        const signalPath = ref(db, `webrtc_signals/${roomId}`);
+        remove(signalPath)
+            .then(() => console.log(`Signaling data for room ${roomId} cleaned up.`))
+            .catch(error => console.error("Error cleaning up signaling data:", error));
     }
 }
 
@@ -220,18 +233,6 @@ function joinRoomFunc(rid) {
 }
 
 // ----------------------------------------------------------------------
-// 🗑️ Function to clear the signaling data in Firebase
-// ----------------------------------------------------------------------
-function cleanupSignalingData(roomId) {
-    if (db && roomId) {
-        const signalPath = ref(db, `webrtc_signals/${roomId}`);
-        remove(signalPath)
-            .then(() => console.log(`Signaling data for room ${roomId} cleaned up.`))
-            .catch(error => console.error("Error cleaning up signaling data:", error));
-    }
-}
-
-// ----------------------------------------------------------------------
 // 🌐 Peer Initialization and Signaling
 // ----------------------------------------------------------------------
 function initializePeer(roomId, isInitiator) {
@@ -242,31 +243,24 @@ function initializePeer(roomId, isInitiator) {
     const connRef = ref(db, `webrtc_signals/${roomId}`); 
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
-    // *** SimplePeer is now global (loaded via <script>) ***
-    // This resolves the TypeError: SimplePeer is not a constructor
+    // Access SimplePeer globally (loaded via <script>)
+    // This solves the TypeError: SimplePeer is not a constructor
     peer = new SimplePeer({ initiator: isInitiator, trickle: false });
 
     // Send Signal to Firebase
     peer.on('signal', data => {
-        push(connRef, JSON.stringify(data)).catch(e => console.error("Error pushing signal:", e));
-    });
-
-    // Receive Signal from Firebase
-    peer.on('signal', data => {
         push(connRef, JSON.stringify(data));
     });
 
+    // Receive Signal from Firebase (Handle redundant signals gracefully)
     onChildAdded(connRef, snap => {
         try {
             const data = JSON.parse(snap.val());
             if (!peer.destroyed && data && peer.signal) {
-                // IMPORTANT: Use a try-catch block here to handle the InvalidStateError gracefully
                 try {
                     peer.signal(data);
                 } catch(e) {
-                    if (e.name === 'InvalidStateError') {
-                        console.warn("Received redundant signal, ignoring: InvalidStateError");
-                    } else {
+                    if (e.name !== 'InvalidStateError') {
                         console.error("Error processing signal:", e);
                     }
                 }
