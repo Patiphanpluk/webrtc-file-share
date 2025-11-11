@@ -51,19 +51,18 @@ button:hover { background: #1e40af; }
 
 <script type="module">
 // ----------------------------------------------------------------------
-// 🚨 การนำเข้า Firebase และ SimplePeer (แก้ไข CDN ให้เสถียรแล้ว)
+// 🚨 Import Firebase and WebRTC Libraries
 // ----------------------------------------------------------------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-// ใช้ SimplePeer จาก UNPKG ซึ่งเสถียรกว่า
-import SimplePeerLib from "https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"; 
+// Using cdnjs for reliable WebRTC libraries
+import SimplePeerLib from "https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js"; 
 const SimplePeer = SimplePeerLib.default;
-// ใช้ QR Code จาก UNPKG ซึ่งเสถียรกว่า
-import QRCode from "https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js"; 
+import QRCode from "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js"; 
 
 // ----------------------------------------------------------------------
-// ✅ ค่า Firebase Config ที่ถูกอัปเดตและยืนยันแล้ว
+// ✅ Firebase Configuration (file-share-8bccd project)
 // ----------------------------------------------------------------------
 const firebaseConfig = {
     apiKey: "AIzaSyDoUsDv0omYdaR-oJL7g9qk21IhRUsIOpM",
@@ -76,14 +75,14 @@ const firebaseConfig = {
     measurementId: "G-0HLJ1ZEQ53"
 };
 
-// 🔸 การเริ่มต้น Firebase
+// 🔸 Initialize Firebase
 let db, auth;
 try {
     const app = initializeApp(firebaseConfig);
     db = getDatabase(app);
     auth = getAuth(app);
 } catch(e) {
-    document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: Firebase Config ล้มเหลว';
+    document.getElementById('auth-status').textContent = '🔴 Firebase Init Failed';
     console.error("Firebase Initialization Error:", e);
     throw e;
 }
@@ -93,7 +92,7 @@ let peer = null;
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 // ----------------------------------------------------------------------
-// 🔑 ฟังก์ชันการรับรองความถูกต้อง (Anonymous Authentication)
+// 🔑 Authentication (Anonymous)
 // ----------------------------------------------------------------------
 async function authenticate() {
     document.getElementById('auth-status').textContent = 'กำลังยืนยันตัวตน...';
@@ -105,17 +104,18 @@ async function authenticate() {
         document.getElementById('user-id-display').textContent = `User ID: ${userId.substring(0, 8)}...`;
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-green-600');
         document.getElementById('app-content').style.display = 'block';
-        setupRoom(); // เริ่มตั้งค่าห้องหลังจากยืนยันตัวตนแล้ว
+        setupRoom(); // Start room setup after successful authentication
     } catch (error) {
         console.error("Authentication failed:", error);
-        // แสดงข้อความ Error ที่ชัดเจนขึ้น
-        document.getElementById('auth-status').textContent = `❌ การยืนยันตัวตนล้มเหลว: ${error.code.split('/')[1] || 'Unknown Error'}`;
+        // Display specific Firebase error code for debugging
+        const errorCode = error.code ? error.code.split('/')[1] : 'NETWORK_ERROR';
+        document.getElementById('auth-status').textContent = `❌ ยืนยันตัวตนล้มเหลว: ${errorCode}`;
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-red-600');
     }
 }
 
 // ----------------------------------------------------------------------
-// ⚙️ ฟังก์ชันหลักในการสร้างห้องและเชื่อมต่อ Peer
+// ⚙️ Main Room Setup
 // ----------------------------------------------------------------------
 function setupRoom() {
     const params = new URLSearchParams(location.search);
@@ -139,7 +139,7 @@ function setupRoom() {
 }
 
 // ----------------------------------------------------------------------
-// 🌟 สร้างห้องใหม่ (Peer Initiator)
+// 🌟 Start New Room (Initiator)
 // ----------------------------------------------------------------------
 function startNewRoom() {
     let roomId = Math.random().toString(36).substring(2,10);
@@ -150,7 +150,7 @@ function startNewRoom() {
 }
 
 // ----------------------------------------------------------------------
-// 🤝 เข้าร่วมห้อง (Peer Non-Initiator)
+// 🤝 Join Room (Non-Initiator)
 // ----------------------------------------------------------------------
 function joinRoomFunc(rid) {
     document.getElementById("room-id").textContent = "กำลังเข้าร่วมห้อง: " + rid;
@@ -164,25 +164,24 @@ function joinRoomFunc(rid) {
 }
 
 // ----------------------------------------------------------------------
-// 🌐 ฟังก์ชันรวมสำหรับการสร้าง Peer และ Signaling
+// 🌐 Peer Initialization and Signaling
 // ----------------------------------------------------------------------
 function initializePeer(roomId, isInitiator) {
     if (peer && !peer.destroyed) {
         peer.destroy();
     }
     
-    // ใช้พาธ webrtc_signals/roomID
     const connRef = ref(db, `webrtc_signals/${roomId}`); 
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
     peer = new SimplePeer({ initiator: isInitiator, trickle: false });
 
-    // ส่ง Signal ไป Firebase
+    // Send Signal to Firebase
     peer.on('signal', data => {
         push(connRef, JSON.stringify(data)).catch(e => console.error("Error pushing signal:", e));
     });
 
-    // รับ Signal จาก Firebase
+    // Receive Signal from Firebase
     onChildAdded(connRef, snap => {
         try {
             const data = JSON.parse(snap.val());
@@ -216,7 +215,7 @@ function initializePeer(roomId, isInitiator) {
 }
 
 // ----------------------------------------------------------------------
-// 📤 การจัดการการส่งข้อมูล (ข้อความและไฟล์)
+// 📤 Data Handling (Send Text and Files)
 // ----------------------------------------------------------------------
 function handleSendText() {
     const text = document.getElementById("message").value.trim();
@@ -260,7 +259,7 @@ function handleSendFile(e) {
 }
 
 // ----------------------------------------------------------------------
-// 📥 การจัดการการรับข้อมูล
+// 📥 Data Handling (Receive)
 // ----------------------------------------------------------------------
 function handleReceiveData(data) {
     try {
@@ -291,7 +290,7 @@ function handleReceiveData(data) {
 }
 
 // ----------------------------------------------------------------------
-// 💬 การแสดงผลข้อความในแชท
+// 💬 Chat Display
 // ----------------------------------------------------------------------
 function addMsg(txt){
     const div = document.createElement("div");
@@ -303,7 +302,7 @@ function addMsg(txt){
 }
 
 // ----------------------------------------------------------------------
-// 🚀 เริ่มต้นแอปพลิเคชัน
+// 🚀 Start Application
 // ----------------------------------------------------------------------
 window.onload = authenticate;
 </script>
