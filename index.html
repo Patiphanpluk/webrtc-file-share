@@ -54,14 +54,14 @@ button:hover { background: #1e40af; }
 // 🚨 การนำเข้า Firebase และ SimplePeer
 // ----------------------------------------------------------------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getDatabase, ref, push, onChildAdded, set } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import SimplePeerLib from "https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js";
 const SimplePeer = SimplePeerLib.default;
 import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js";
 
 // ----------------------------------------------------------------------
-// ✅ ค่า Firebase Config ที่ถูกอัปเดตแล้ว
+// ✅ ค่า Firebase Config ที่ถูกอัปเดตและยืนยันแล้ว
 // ----------------------------------------------------------------------
 const firebaseConfig = {
     apiKey: "AIzaSyDoUsDv0omYdaR-oJL7g9qk21IhRUsIOpM",
@@ -96,6 +96,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 async function authenticate() {
     document.getElementById('auth-status').textContent = 'กำลังยืนยันตัวตน...';
     try {
+        // ขั้นตอนนี้ต้องการให้ Anonymous Authentication เปิดอยู่
         const userCredential = await signInAnonymously(auth);
         userId = userCredential.user.uid;
         
@@ -106,8 +107,8 @@ async function authenticate() {
         setupRoom(); // เริ่มตั้งค่าห้องหลังจากยืนยันตัวตนแล้ว
     } catch (error) {
         console.error("Authentication failed:", error);
-        // นี่คือจุดที่มักจะเกิดปัญหา (auth/operation-not-allowed) ถ้าไม่ได้เปิด Anonymous Auth
-        document.getElementById('auth-status').textContent = '❌ การยืนยันตัวตนล้มเหลว (ตรวจสอบ Anonymous Auth)';
+        // แสดงข้อความแนะนำให้ตรวจสอบ Anonymous Auth และ Rules
+        document.getElementById('auth-status').textContent = '❌ การยืนยันตัวตนล้มเหลว (ตรวจสอบ Anonymous Auth และ DB Rules)';
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-red-600');
     }
 }
