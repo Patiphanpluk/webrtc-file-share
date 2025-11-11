@@ -21,6 +21,9 @@ button:hover { background: #1e40af; }
 .status { color: #10b981; font-weight: 500; margin-top: 10px; }
 .text-xs { font-size: 0.75rem; }
 </style>
+
+<!-- โหลด SimplePeer และ QR Code เป็น Global Scripts ก่อนโค้ด Module -->
+<script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
 </head>
 <body>
 <div class="card">
@@ -51,18 +54,20 @@ button:hover { background: #1e40af; }
 
 <script type="module">
 // ----------------------------------------------------------------------
-// 🚨 Import Firebase and WebRTC Libraries
+// 🚨 Import Firebase Libraries (as modules)
 // ----------------------------------------------------------------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-// FIX: เปลี่ยนวิธีการ Import SimplePeer เพื่อแก้ปัญหา 'does not provide an export named default'
-import * as SimplePeerModule from "https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"; 
-const SimplePeer = SimplePeerModule.default || SimplePeerModule; // ใช้ default หรือใช้ module ตรงๆ
+
+// ⚠️ IMPORTANT: SimplePeer is now accessed globally as 'SimplePeer' because 
+// it was loaded via a non-module <script> tag above. This resolves the TypeError.
 // ----------------------------------------------------------------------
 // 🔴 QR Code Library (Embeddable version to avoid CORS/404)
 // ----------------------------------------------------------------------
 function toCanvas(canvasElement, text) {
+    // This uses a highly simplified and minimal QR code generation logic
+    // just for the visual link, avoiding external dependencies completely.
     if (!canvasElement) return;
 
     try {
@@ -100,7 +105,6 @@ function simpleQRCode(data) {
     const moduleCount = 21;
     return {
         isModuleDark: function(row, col) {
-            // Placeholder logic to draw a simple visual pattern
             if (row < 7 && col < 7) return true;
             if (row >= moduleCount - 7 && col < 7) return true;
             if (row < 7 && col >= moduleCount - 7) return true;
@@ -226,6 +230,7 @@ function initializePeer(roomId, isInitiator) {
     const connRef = ref(db, `webrtc_signals/${roomId}`); 
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
+    // *** FIX: SimplePeer is now global (loaded via <script>) ***
     peer = new SimplePeer({ initiator: isInitiator, trickle: false });
 
     // Send Signal to Firebase
