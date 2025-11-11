@@ -61,39 +61,33 @@ const SimplePeer = SimplePeerLib.default;
 import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js";
 
 // ----------------------------------------------------------------------
-// ⚠️ ต้องแทนที่ Firebase Config ด้วยค่าจริงของคุณ
+// ✅ ค่า Firebase Config ที่ถูกอัปเดตแล้ว
 // ----------------------------------------------------------------------
 const firebaseConfig = {
-    // ต้องแทนที่ค่าเหล่านี้ด้วย Firebase Config ของคุณ
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    databaseURL: "YOUR_DATABASE_URL", 
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDoUsDv0omYdaR-oJL7g9qk21IhRUsIOpM",
+    authDomain: "file-share-8bccd.firebaseapp.com",
+    databaseURL: "https://file-share-8bccd-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "file-share-8bccd",
+    storageBucket: "file-share-8bccd.firebasestorage.app",
+    messagingSenderId: "607625231087",
+    appId: "1:607625231087:web:f8cc2bde638b2b7ab2791a",
+    measurementId: "G-0HLJ1ZEQ53"
 };
 
 // 🔸 การเริ่มต้น Firebase
 let db, auth;
-if (!firebaseConfig.apiKey.includes("YOUR_")) {
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getDatabase(app);
-        auth = getAuth(app);
-    } catch(e) {
-        document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: Firebase Config ไม่ถูกต้องหรือเริ่มต้นล้มเหลว';
-        console.error("Firebase Initialization Error:", e);
-        throw e;
-    }
-} else {
-    document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: กรุณาใส่ Firebase Config ที่ถูกต้อง';
-    throw new Error("Please update firebaseConfig with your actual credentials.");
+try {
+    const app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+    auth = getAuth(app);
+} catch(e) {
+    document.getElementById('auth-status').textContent = '🔴 ข้อผิดพลาด: Firebase Config ล้มเหลว';
+    console.error("Firebase Initialization Error:", e);
+    throw e;
 }
 
 let userId = null;
 let peer = null;
-let currentRoomId = null;
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
 
 // ----------------------------------------------------------------------
@@ -112,7 +106,8 @@ async function authenticate() {
         setupRoom(); // เริ่มตั้งค่าห้องหลังจากยืนยันตัวตนแล้ว
     } catch (error) {
         console.error("Authentication failed:", error);
-        document.getElementById('auth-status').textContent = '❌ การยืนยันตัวตนล้มเหลว';
+        // นี่คือจุดที่มักจะเกิดปัญหา (auth/operation-not-allowed) ถ้าไม่ได้เปิด Anonymous Auth
+        document.getElementById('auth-status').textContent = '❌ การยืนยันตัวตนล้มเหลว (ตรวจสอบ Anonymous Auth)';
         document.getElementById('auth-status').classList.replace('text-yellow-600', 'text-red-600');
     }
 }
@@ -133,7 +128,6 @@ function setupRoom() {
     document.getElementById("join-btn").onclick = () => {
         const r = document.getElementById("join-room").value.trim();
         if(r) {
-            // เพื่อให้ URL เปลี่ยนเมื่อ Join
             window.location.href = window.location.origin + window.location.pathname + `?room=${r}`;
         }
     };
@@ -146,22 +140,20 @@ function setupRoom() {
 // 🌟 สร้างห้องใหม่ (Peer Initiator)
 // ----------------------------------------------------------------------
 function startNewRoom() {
-    currentRoomId = Math.random().toString(36).substring(2,10);
-    initializePeer(currentRoomId, true);
+    let roomId = Math.random().toString(36).substring(2,10);
+    initializePeer(roomId, true);
     
-    document.getElementById("room-id").textContent = "รหัสห้องของคุณ: " + currentRoomId;
-    QRCode.toCanvas(document.getElementById("qr"), location.origin + location.pathname + "?room=" + currentRoomId, { width: 160 });
+    document.getElementById("room-id").textContent = "รหัสห้องของคุณ: " + roomId;
+    QRCode.toCanvas(document.getElementById("qr"), location.origin + location.pathname + "?room=" + roomId, { width: 160 });
 }
 
 // ----------------------------------------------------------------------
 // 🤝 เข้าร่วมห้อง (Peer Non-Initiator)
 // ----------------------------------------------------------------------
 function joinRoomFunc(rid) {
-    currentRoomId = rid;
     document.getElementById("room-id").textContent = "กำลังเข้าร่วมห้อง: " + rid;
     document.getElementById("join-room").value = rid;
     
-    // ซ่อนปุ่ม Join เมื่อมีการเข้าร่วมแล้ว
     document.getElementById("join-btn").style.display = 'none';
 
     initializePeer(rid, false);
@@ -177,7 +169,8 @@ function initializePeer(roomId, isInitiator) {
         peer.destroy();
     }
     
-    const connRef = ref(db, `webrtc_signals/${roomId}`);
+    // ใช้พาธ webrtc_signals/roomID
+    const connRef = ref(db, `webrtc_signals/${roomId}`); 
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
     peer = new SimplePeer({ initiator: isInitiator, trickle: false });
@@ -221,7 +214,7 @@ function initializePeer(roomId, isInitiator) {
 }
 
 // ----------------------------------------------------------------------
-// 📤 การจัดการการส่งข้อมูล (ข้อความ)
+// 📤 การจัดการการส่งข้อมูล (ข้อความและไฟล์)
 // ----------------------------------------------------------------------
 function handleSendText() {
     const text = document.getElementById("message").value.trim();
@@ -237,9 +230,6 @@ function handleSendText() {
     }
 }
 
-// ----------------------------------------------------------------------
-// 📤 การจัดการการส่งข้อมูล (ไฟล์)
-// ----------------------------------------------------------------------
 function handleSendFile(e) {
     const file = e.target.files[0];
     if (!file || !peer || peer.destroyed || !peer.connected) {
@@ -249,21 +239,20 @@ function handleSendFile(e) {
 
     if (file.size > MAX_FILE_SIZE) {
         addMsg(`❌ ไม่สามารถส่งไฟล์ได้: ไฟล์มีขนาดใหญ่เกิน ${(MAX_FILE_SIZE / 1024 / 1024).toFixed(0)}MB`);
-        e.target.value = null; // Reset input
+        e.target.value = null; 
         return;
     }
     
     const reader = new FileReader();
     reader.onload = () => {
         try {
-            // ส่งไฟล์เป็น Data URL (Base64)
             peer.send(JSON.stringify({ type: "file", name: file.name, data: reader.result }));
             addMsg(`📤 ส่งไฟล์: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         } catch (e) {
             console.error("Error sending file data:", e);
             addMsg("❌ การส่งไฟล์ล้มเหลว (ขนาดไฟล์อาจใหญ่เกินไป)");
         }
-        e.target.value = null; // Reset input after use
+        e.target.value = null; 
     };
     reader.readAsDataURL(file);
 }
@@ -314,7 +303,7 @@ function addMsg(txt){
 // ----------------------------------------------------------------------
 // 🚀 เริ่มต้นแอปพลิเคชัน
 // ----------------------------------------------------------------------
-authenticate();
+window.onload = authenticate;
 </script>
 </body>
 </html>
