@@ -56,17 +56,13 @@ button:hover { background: #1e40af; }
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-// ใช้ SimplePeer จาก UNPKG ซึ่งเสถียร
-import SimplePeerLib from "https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"; 
-const SimplePeer = SimplePeerLib.default;
-
+// FIX: เปลี่ยนวิธีการ Import SimplePeer เพื่อแก้ปัญหา 'does not provide an export named default'
+import * as SimplePeerModule from "https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"; 
+const SimplePeer = SimplePeerModule.default || SimplePeerModule; // ใช้ default หรือใช้ module ตรงๆ
 // ----------------------------------------------------------------------
 // 🔴 QR Code Library (Embeddable version to avoid CORS/404)
-// **FIXED SYNTAX ERROR HERE**
 // ----------------------------------------------------------------------
 function toCanvas(canvasElement, text) {
-    // This uses a highly simplified and minimal QR code generation logic
-    // just for the visual link, avoiding external dependencies completely.
     if (!canvasElement) return;
 
     try {
@@ -76,17 +72,15 @@ function toCanvas(canvasElement, text) {
         const ctx = canvasElement.getContext('2d');
         canvasElement.width = size;
         canvasElement.height = size;
-        const moduleCount = 21; // Simplified constant size
+        const moduleCount = 21; 
         const moduleSize = size / moduleCount;
         
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, size, size);
         ctx.fillStyle = "#000000";
 
-        // Draw a simple pattern placeholder
         for (let row = 0; row < moduleCount; row++) {
             for (let col = 0; col < moduleCount; col++) {
-                // Simple pattern to represent QR Code structure
                 if (qr.isModuleDark(row, col)) {
                     ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
                 }
@@ -102,17 +96,15 @@ function toCanvas(canvasElement, text) {
     }
 }
 
-// Minimal QR Code implementation provided by a single function
 function simpleQRCode(data) {
     const moduleCount = 21;
     return {
         isModuleDark: function(row, col) {
-            // Simplified logic: checks for border/finder patterns
+            // Placeholder logic to draw a simple visual pattern
             if (row < 7 && col < 7) return true;
             if (row >= moduleCount - 7 && col < 7) return true;
             if (row < 7 && col >= moduleCount - 7) return true;
             if (row === col || row + col === moduleCount - 1) {
-                // Draws a few diagonal lines for visual effect
                 return true;
             }
             return false;
