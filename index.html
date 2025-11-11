@@ -22,7 +22,7 @@ button:hover { background: #1e40af; }
 .text-xs { font-size: 0.75rem; }
 </style>
 
-<!-- โหลด SimplePeer และ QR Code เป็น Global Scripts ก่อนโค้ด Module -->
+<!-- โหลด SimplePeer เป็น Global Scripts เพื่อแก้ TypeError -->
 <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
 </head>
 <body>
@@ -57,17 +57,14 @@ button:hover { background: #1e40af; }
 // 🚨 Import Firebase Libraries (as modules)
 // ----------------------------------------------------------------------
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+import { getDatabase, ref, push, onChildAdded, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-// ⚠️ IMPORTANT: SimplePeer is now accessed globally as 'SimplePeer' because 
-// it was loaded via a non-module <script> tag above. This resolves the TypeError.
+// ⚠️ SimplePeer is accessed globally as 'SimplePeer'
 // ----------------------------------------------------------------------
-// 🔴 QR Code Library (Embeddable version to avoid CORS/404)
+// 🔴 QR Code Library (Embeddable version to avoid CDN issues)
 // ----------------------------------------------------------------------
 function toCanvas(canvasElement, text) {
-    // This uses a highly simplified and minimal QR code generation logic
-    // just for the visual link, avoiding external dependencies completely.
     if (!canvasElement) return;
 
     try {
@@ -134,6 +131,7 @@ const firebaseConfig = {
 
 // 🔸 Initialize Firebase
 let db, auth;
+let currentRoomId = null; // เพิ่มตัวแปร global เพื่อเก็บ Room ID
 try {
     const app = initializeApp(firebaseConfig);
     db = getDatabase(app);
@@ -199,6 +197,7 @@ function setupRoom() {
 // ----------------------------------------------------------------------
 function startNewRoom() {
     let roomId = Math.random().toString(36).substring(2,10);
+    currentRoomId = roomId;
     initializePeer(roomId, true);
     
     document.getElementById("room-id").textContent = "รหัสห้องของคุณ: " + roomId;
@@ -209,6 +208,7 @@ function startNewRoom() {
 // 🤝 Join Room (Non-Initiator)
 // ----------------------------------------------------------------------
 function joinRoomFunc(rid) {
+    currentRoomId = rid;
     document.getElementById("room-id").textContent = "กำลังเข้าร่วมห้อง: " + rid;
     document.getElementById("join-room").value = rid;
     
@@ -217,6 +217,18 @@ function joinRoomFunc(rid) {
     initializePeer(rid, false);
     
     toCanvas(document.getElementById("qr"), location.origin + location.pathname + "?room=" + rid);
+}
+
+// ----------------------------------------------------------------------
+// 🗑️ Function to clear the signaling data in Firebase
+// ----------------------------------------------------------------------
+function cleanupSignalingData(roomId) {
+    if (db && roomId) {
+        const signalPath = ref(db, `webrtc_signals/${roomId}`);
+        remove(signalPath)
+            .then(() => console.log(`Signaling data for room ${roomId} cleaned up.`))
+            .catch(error => console.error("Error cleaning up signaling data:", error));
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -230,7 +242,8 @@ function initializePeer(roomId, isInitiator) {
     const connRef = ref(db, `webrtc_signals/${roomId}`); 
     document.getElementById('connection-status').textContent = '🟡 กำลังรอการเชื่อมต่อ Peer...';
 
-    // *** FIX: SimplePeer is now global (loaded via <script>) ***
+    // *** SimplePeer is now global (loaded via <script>) ***
+    // This resolves the TypeError: SimplePeer is not a constructor
     peer = new SimplePeer({ initiator: isInitiator, trickle: false });
 
     // Send Signal to Firebase
@@ -239,14 +252,27 @@ function initializePeer(roomId, isInitiator) {
     });
 
     // Receive Signal from Firebase
+    peer.on('signal', data => {
+        push(connRef, JSON.stringify(data));
+    });
+
     onChildAdded(connRef, snap => {
         try {
             const data = JSON.parse(snap.val());
-            if (!peer.destroyed && data) {
-                peer.signal(data);
+            if (!peer.destroyed && data && peer.signal) {
+                // IMPORTANT: Use a try-catch block here to handle the InvalidStateError gracefully
+                try {
+                    peer.signal(data);
+                } catch(e) {
+                    if (e.name === 'InvalidStateError') {
+                        console.warn("Received redundant signal, ignoring: InvalidStateError");
+                    } else {
+                        console.error("Error processing signal:", e);
+                    }
+                }
             }
         } catch (e) {
-            console.error("Error signaling peer:", e);
+            console.error("Error processing signal payload:", e);
         }
     });
 
@@ -255,6 +281,9 @@ function initializePeer(roomId, isInitiator) {
         document.getElementById("chat-box").style.display = "block";
         document.getElementById('connection-status').textContent = '🟢 เชื่อมต่อ Peer-to-Peer สำเร็จ! (เข้ารหัส)';
         addMsg("✅ เชื่อมต่อกับคู่สนทนาสำเร็จ! เริ่มแชทและส่งไฟล์ได้เลย");
+        
+        // Clean up signaling data immediately after connection is established
+        cleanupSignalingData(roomId);
     });
 
     peer.on("data", handleReceiveData);
@@ -268,6 +297,9 @@ function initializePeer(roomId, isInitiator) {
         document.getElementById('connection-status').textContent = '⚫ การเชื่อมต่อถูกตัด';
         document.getElementById("chat-box").style.display = "none";
         addMsg("⚠️ การเชื่อมต่อถูกตัดแล้ว โปรดลองสร้างห้องใหม่");
+        
+        // Clean up data on close just in case
+        cleanupSignalingData(currentRoomId);
     });
 }
 
